@@ -27,7 +27,7 @@ st.markdown(
 # ==========================
 @st.cache_data
 def load_data():
-    return pd.read_excel("data_rkap_final.xlsx")
+    return pd.read_excel("data_rkap.xlsx")
 
 df = load_data()
 
