@@ -27,7 +27,7 @@ st.markdown(
 # ==========================
 @st.cache_data
 def load_data():
-    return pd.read_excel("data_rkap.xlsx")
+    return pd.read_excel("data_rkap_final.xlsx")
 
 df = load_data()
 
@@ -117,5 +117,6 @@ st.dataframe(df_filter, use_container_width=True)
 
 st.markdown("---")
 st.caption("© 2025 IAS Hospitality – Automated Performance Dashboard")
+
 
 
