@@ -31,8 +31,31 @@ def load_data():
 
 df = load_data()
 
-# Hapus baris kosong pada kolom utama (biar tidak error di multiselect)
-df = df.dropna(subset=["Tahun", "Bulan", "Kategori"])
+# ==========================
+# BERSIHKAN & STANDARISASI DATA
+# ==========================
+df = df.dropna(subset=["Tahun", "Bulan", "Kategori"])  # hilangkan baris kosong
+
+# --- Normalisasi nama bulan agar konsisten ---
+bulan_order = ["JAN", "FEB", "MAR", "APR", "MEI", "JUN", "JUL", "AUGUST", "SEPT", "OCT", "NOV", "DES"]
+df["Bulan"] = df["Bulan"].astype(str).str.upper().str.strip()
+df["Bulan"] = pd.Categorical(df["Bulan"], categories=bulan_order, ordered=True)
+df = df.sort_values("Bulan")
+
+# --- Pastikan Capture Ratio numerik (hilangkan tanda % atau koma) ---
+if "Capture Ratio" in df.columns:
+    df["Capture Ratio"] = (
+        df["Capture Ratio"]
+        .astype(str)
+        .str.strip()
+        .str.replace("%", "", regex=False)
+        .str.replace(",", ".", regex=False)
+    )
+    df["Capture Ratio"] = pd.to_numeric(df["Capture Ratio"], errors="coerce")
+
+    # Jika semua di bawah 1, artinya datanya dalam bentuk desimal (misal 0.45) → ubah ke persen
+    if df["Capture Ratio"].mean(skipna=True) < 1:
+        df["Capture Ratio"] = df["Capture Ratio"] * 100
 
 # ==========================
 # VALIDASI KOLOM
@@ -44,14 +67,7 @@ if missing:
     st.stop()
 
 # ==========================
-# URUTKAN BULAN
-# ==========================
-bulan_order = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
-df["Bulan"] = pd.Categorical(df["Bulan"], categories=bulan_order, ordered=True)
-df = df.sort_values("Bulan")
-
-# ==========================
-# FILTER PILIHAN
+# FILTER (TAHUN, KATEGORI, BULAN)
 # ==========================
 st.title("📊 Dashboard RKAP vs Achievement IASH")
 st.markdown("### Perbandingan RKAP, Achievement, Capture Ratio, PAX, dan Traffic per Bulan & Kategori")
@@ -75,23 +91,10 @@ df_filter = df[
 # ==========================
 # METRIK UTAMA
 # ==========================
-total_rkap = df_filter["RKAP"].sum()
-total_ach = df_filter["Achievement"].sum()
-selisih = total_ach - total_rkap
-persen = (selisih / total_rkap * 100) if total_rkap != 0 else 0
-
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Total RKAP", f"Rp {total_rkap:,.0f}")
-col2.metric("Total Achievement", f"Rp {total_ach:,.0f}")
+col1, col2, col3 = st.columns(3)
+col1.metric("Total RKAP", f"Rp {df_filter['RKAP'].sum():,.0f}")
+col2.metric("Total Achievement", f"Rp {df_filter['Achievement'].sum():,.0f}")
 col3.metric("Rata-rata Capture Ratio", f"{df_filter['Capture Ratio'].mean():.1f}%")
-col4.metric("Pencapaian vs RKAP", f"{persen:.1f}%", delta=f"{selisih:,.0f}",
-            delta_color="normal" if selisih >= 0 else "inverse")
-
-# ==========================
-# WARNA & TEMPLATE
-# ==========================
-px.defaults.template = "plotly_white"
-px.defaults.color_discrete_sequence = ["#004080", "#0074D9", "#7FDBFF", "#39CCCC", "#3D9970"]
 
 # ==========================
 # GRAFIK 1: RKAP vs ACHIEVEMENT
@@ -102,13 +105,14 @@ fig1 = px.bar(
     x="Kategori",
     y=["RKAP", "Achievement"],
     barmode="group",
-    text_auto=".2s"
+    color_discrete_sequence=px.colors.qualitative.Set2,
 )
+fig1.update_traces(texttemplate="%{y:,.0f}", textposition="outside")
 fig1.update_layout(yaxis_title="Nilai (Rp)", xaxis_title="Kategori", template="plotly_white")
 st.plotly_chart(fig1, use_container_width=True)
 
 # ==========================
-# GRAFIK 2: CAPTURE RATIO
+# GRAFIK 2: CAPTURE RATIO PER BULAN
 # ==========================
 st.subheader("🎯 Capture Ratio per Bulan")
 fig2 = px.line(
@@ -116,9 +120,9 @@ fig2 = px.line(
     x="Bulan",
     y="Capture Ratio",
     color="Kategori",
-    markers=True
+    markers=True,
+    color_discrete_sequence=px.colors.qualitative.Prism
 )
-fig2.add_hline(y=100, line_dash="dot", line_color="red", annotation_text="Target 100%")
 fig2.update_layout(yaxis_title="Capture Ratio (%)", xaxis_title="Bulan", template="plotly_white")
 st.plotly_chart(fig2, use_container_width=True)
 
@@ -132,42 +136,33 @@ fig3 = px.line(
     y=["PAX", "Traffic"],
     markers=True,
     title="Perbandingan PAX & Traffic",
+    color_discrete_sequence=px.colors.qualitative.Set2
 )
 fig3.update_layout(yaxis_title="Jumlah Penumpang", xaxis_title="Bulan", template="plotly_white")
 st.plotly_chart(fig3, use_container_width=True)
 
 # ==========================
-# FORMAT ANGKA UNTUK TABEL
-# ==========================
-df_tampil = df_filter.copy()
-num_cols = ["RKAP", "Achievement", "Capture Ratio", "PAX", "Traffic"]
-for col in num_cols:
-    if col in df_tampil.columns:
-        if col in ["RKAP", "Achievement"]:
-            df_tampil[col] = df_tampil[col].apply(lambda x: f"Rp {x:,.0f}")
-        elif col == "Capture Ratio":
-            df_tampil[col] = df_tampil[col].apply(lambda x: f"{x:.1f}%")
-        else:
-            df_tampil[col] = df_tampil[col].apply(lambda x: f"{x:,.0f}")
-
-# ==========================
 # TABEL DATA
 # ==========================
 st.subheader("📋 Data Detail")
-st.data_editor(df_tampil, use_container_width=True, height=400)
 
-# ==========================
-# DOWNLOAD DATA
-# ==========================
-st.download_button(
-    label="📥 Download Data (CSV)",
-    data=df_filter.to_csv(index=False).encode("utf-8"),
-    file_name=f"rkap_vs_achievement_{'_'.join(map(str, tahun_terpilih))}.csv",
-    mime="text/csv"
-)
+df_tampil = df_filter.copy()
 
-# ==========================
-# FOOTER
-# ==========================
+# Format angka agar rapi
+for kol in ["RKAP", "Achievement", "PAX", "Traffic"]:
+    if kol in df_tampil.columns:
+        df_tampil[kol] = df_tampil[kol].apply(
+            lambda x: f"{x:,.0f}" if pd.notna(x) and isinstance(x, (int, float)) else "-"
+        )
+
+# Pastikan Capture Ratio tampil dengan format persen
+if "Capture Ratio" in df_tampil.columns:
+    df_tampil["Capture Ratio"] = df_tampil["Capture Ratio"].apply(
+        lambda x: f"{x:.1f}%" if pd.notna(x) and isinstance(x, (int, float)) else "-"
+    )
+
+st.dataframe(df_tampil, use_container_width=True)
+
 st.markdown("---")
 st.caption("© 2025 IAS Hospitality – Automated Performance Dashboard")
+
